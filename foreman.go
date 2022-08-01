@@ -30,13 +30,12 @@ type systemStatus int
 type dependencyGraph map[string][]string
 
 type Foreman struct {
-    services map[string]Service
+    services map[string]*Service
     status systemStatus
 }
 
 type Service struct {
     serviceName string
-    process *os.Process
     cmd string
     args []string
     runOnce bool
@@ -53,7 +52,7 @@ type Checks struct {
 
 func New(procfilePath string) (*Foreman, error) {
     foreman := &Foreman{
-    	services: map[string]Service{},
+    	services: make(map[string]*Service),
         status: active,
     }
 
@@ -69,11 +68,11 @@ func New(procfilePath string) (*Foreman, error) {
     }
 
     for key, value := range procfileMap {
-        service := Service{
+        service := &Service{
         	serviceName: key,
         }
 
-        parseService(value, &service)
+        parseService(value, service)
         foreman.services[key] = service
     }
 
@@ -81,7 +80,10 @@ func New(procfilePath string) (*Foreman, error) {
 }
 
 func (foreman *Foreman) Start() error {
+    var err error
     sigs := make(chan os.Signal)
+    runOnceErr := make(chan error, 1)
+    runAlwaysErr := make(chan error)
     depGraph := foreman.buildDependencyGraph()
 
     if depGraph.isCyclic() {
@@ -92,17 +94,24 @@ func (foreman *Foreman) Start() error {
     startList := depGraph.topSort()
 
     for _, serviceName := range startList {
-        err := foreman.startService(serviceName)
+        service := foreman.services[serviceName]
+        if service.runOnce {
+            service.startService(runOnceErr)
+            err = <-runOnceErr
+        } else {
+            go service.startService(runAlwaysErr)
+            err = <-runAlwaysErr
+        }
+
         if err != nil {
             return err
         }
     }
 
-    signal.Notify(sigs, syscall.SIGCHLD)
-    for {
-        <-sigs
-        foreman.sigChldHandler()
-    }
+    signal.Notify(sigs, syscall.SIGINT)
+    <-sigs
+
+    return nil
 }
 
 func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
@@ -115,28 +124,31 @@ func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
     return graph
 }
 
-func (foreman *Foreman) startService(serviceName string) error {
-    service := foreman.services[serviceName]
+func (service *Service) startService(errChan chan <- error) {
     serviceExec := exec.Command(service.cmd, service.args...)
 
     err := serviceExec.Start()
     if err != nil {
-        return err
+        errChan <- err
+        return
     }
-    service.process = serviceExec.Process
-    foreman.services[serviceName] = service
-    go foreman.checker(serviceName)
 
-    fmt.Printf("%d %s: process started\n", service.process.Pid, service.serviceName)
-    
-    return nil
+    errChan <- nil
+    // go service.checker(serviceExec.Process.Pid)
+    fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
+    serviceExec.Wait()
+
+    for !service.runOnce {
+        serviceExec = exec.Command(service.cmd, service.args...)
+        serviceExec.Start()
+        serviceExec.Wait()
+    }
+        
 }
 
-func (foreman *Foreman) checker(serviceName string) {
-    service := foreman.services[serviceName]
-
+func (service *Service) checker(pid int) {
     for {
-        err := syscall.Kill(service.process.Pid, 0)
+        err := syscall.Kill(pid, 0)
         if err != nil {
             return
         }
@@ -147,20 +159,10 @@ func (foreman *Foreman) checker(serviceName string) {
         checkExec := exec.Command(service.checks.cmd, service.checks.args...)
         err = checkExec.Run()
         if err != nil {
-            syscall.Kill(service.process.Pid, syscall.SIGINT)
+            syscall.Kill(pid, syscall.SIGINT)
             return
         }
         checkExec.Process.Release()
-    }
-}
-
-func (foreman *Foreman) sigChldHandler() {
-    fmt.Println("sig child received")
-    for _, service := range foreman.services {
-        service.process.Release()
-        if foreman.status == active && !service.runOnce {
-            foreman.startService(service.serviceName)
-        }
     }
 }
 
