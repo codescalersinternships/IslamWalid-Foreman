@@ -18,20 +18,14 @@ const (
     visited vertixStatus = 2
 
     checkInterval = 100 * time.Millisecond
-
-    inActive systemStatus = 0
-    active systemStatus = 1
 )
 
 type vertixStatus int
-
-type systemStatus int
 
 type dependencyGraph map[string][]string
 
 type Foreman struct {
     services map[string]*Service
-    status systemStatus
 }
 
 type Service struct {
@@ -53,7 +47,6 @@ type Checks struct {
 func New(procfilePath string) (*Foreman, error) {
     foreman := &Foreman{
     	services: make(map[string]*Service),
-        status: active,
     }
 
     procfileData, err := os.ReadFile(procfilePath)
@@ -134,13 +127,16 @@ func (service *Service) startService(errChan chan <- error) {
     }
 
     errChan <- nil
-    // go service.checker(serviceExec.Process.Pid)
     fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
     serviceExec.Wait()
 
     for !service.runOnce {
         serviceExec = exec.Command(service.cmd, service.args...)
-        serviceExec.Start()
+        err := serviceExec.Start()
+        if err != nil {
+            fmt.Println(err)
+        }
+        fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
         serviceExec.Wait()
     }
         
