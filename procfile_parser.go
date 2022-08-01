@@ -2,44 +2,14 @@ package main
 
 import (
 	"fmt"
-	"os"
-
-	"gopkg.in/yaml.v3"
+	"strings"
 )
-
-func New(procfilePath string) (*Foreman, error) {
-    foreman := &Foreman{
-    	services: map[string]Service{},
-    }
-
-    procfileData, err := os.ReadFile(procfilePath)
-    if err != nil {
-        return nil, err
-    }
-
-    procfileMap := map[string]map[string]any{}
-    err = yaml.Unmarshal(procfileData, procfileMap)
-    if err != nil {
-        return nil, err
-    }
-
-    for key, value := range procfileMap {
-        service := Service{
-        	serviceName: key,
-        }
-
-        parseService(value, &service)
-        foreman.services[key] = service
-    }
-
-    return foreman, nil
-}
 
 func parseService(serviceMap map[string]any, out *Service) {
     for key, value := range serviceMap {
         switch key {
         case "cmd":
-            out.cmd = value.(string)
+            out.cmd, out.args = parseCmd(value.(string))
         case "run_once":
             out.runOnce = value.(bool)
         case "deps":
@@ -50,6 +20,11 @@ func parseService(serviceMap map[string]any, out *Service) {
             out.checks = checks
         }
     }
+}
+
+func parseCmd(cmd string) (string, []string) {
+    cmdList := strings.Split(cmd, " ")
+    return cmdList[0], cmdList[1:]
 }
 
 func parseDeps(deps any) []string {
@@ -69,7 +44,7 @@ func parseCheck(check any, out *Checks)  {
     for key, value := range checkMap {
         switch key {
         case "cmd":
-            out.cmd = value.(string)
+            out.cmd, out.args = parseCmd(value.(string))
         case "tcp_ports":
             out.tcpPorts = parsePorts(value)
         case "udp_ports":

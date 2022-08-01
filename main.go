@@ -1,19 +1,10 @@
 package main
 
-type Foreman struct {
-    services map[string]Service
-}
+func main() {
+    foreman, _ := New("./file.yml")
 
-type Service struct {
-    serviceName string
-    cmd string
-    runOnce bool
-    deps []string
-    checks Checks
-}
-
-type Checks struct {
-    cmd string
-    tcpPorts []string
-    udpPorts []string
+    err := foreman.Start()
+    if err != nil {
+        panic(err)
+    }
 }
