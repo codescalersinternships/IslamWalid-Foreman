@@ -125,17 +125,14 @@ func (service *Service) startService(errChan chan <- error) {
         errChan <- err
         return
     }
-
     errChan <- nil
+
     fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
     serviceExec.Wait()
 
     for !service.runOnce {
         serviceExec = exec.Command(service.cmd, service.args...)
-        err := serviceExec.Start()
-        if err != nil {
-            fmt.Println(err)
-        }
+        serviceExec.Start()
         fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
         serviceExec.Wait()
     }
