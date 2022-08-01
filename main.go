@@ -1,9 +1,12 @@
 package main
 
 func main() {
-    foreman, _ := New("./file.yml")
+    foreman, err := New("./Procfile")
+    if err != nil {
+        panic(err)
+    }
 
-    err := foreman.Start()
+    err = foreman.Start()
     if err != nil {
         panic(err)
     }
