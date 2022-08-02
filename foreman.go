@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shirou/gopsutil/process"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,6 +31,7 @@ type Foreman struct {
 
 type Service struct {
     serviceName string
+    process *os.Process
     cmd string
     args []string
     runOnce bool
@@ -73,10 +75,7 @@ func New(procfilePath string) (*Foreman, error) {
 }
 
 func (foreman *Foreman) Start() error {
-    var err error
     sigs := make(chan os.Signal)
-    runOnceErr := make(chan error, 1)
-    runAlwaysErr := make(chan error)
     depGraph := foreman.buildDependencyGraph()
 
     if depGraph.isCyclic() {
@@ -87,24 +86,17 @@ func (foreman *Foreman) Start() error {
     startList := depGraph.topSort()
 
     for _, serviceName := range startList {
-        service := foreman.services[serviceName]
-        if service.runOnce {
-            service.runService(runOnceErr)
-            err = <- runOnceErr
-        } else {
-            go service.runService(runAlwaysErr)
-            err = <- runAlwaysErr
-        }
-
+        err := foreman.startService(serviceName)
         if err != nil {
             return err
         }
     }
 
-    signal.Notify(sigs, syscall.SIGINT)
-    <-sigs
-
-    return nil
+    signal.Notify(sigs, syscall.SIGCHLD)
+    for {
+        <-sigs
+        foreman.sigChildHandler()
+    }
 }
 
 func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
@@ -117,31 +109,29 @@ func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
     return graph
 }
 
-func (service *Service) runService(errChan chan <- error) {
+func (foreman *Foreman) startService(serviceName string) error {
+    service := foreman.services[serviceName]
+
     serviceExec := exec.Command(service.cmd, service.args...)
 
     err := serviceExec.Start()
     if err != nil {
-        errChan <- err
-        return
+        return err
     }
-    errChan <- nil
+
+    service.process = serviceExec.Process
+    foreman.services[serviceName] = service
 
     syscall.Setpgid(serviceExec.Process.Pid, serviceExec.Process.Pid)
-    fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
-    go service.checker(serviceExec.Process.Pid)
-    serviceExec.Wait()
 
-    for !service.runOnce {
-        serviceExec = exec.Command(service.cmd, service.args...)
-        serviceExec.Start()
-        go service.checker(serviceExec.Process.Pid)
-        fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
-        serviceExec.Wait()
-    }
+    fmt.Printf("%d %s: process started\n", service.process.Pid, service.serviceName)
+
+    go service.checks.checker(serviceExec.Process.Pid)
+
+    return nil
 }
 
-func (service *Service) checker(pid int) {
+func (check *Checks) checker(pid int) {
     ticker := time.NewTicker(checkInterval)
     for {
         <-ticker.C
@@ -151,12 +141,24 @@ func (service *Service) checker(pid int) {
             return
         }
         
-        checkExec := exec.Command(service.checks.cmd, service.checks.args...)
+        checkExec := exec.Command(check.cmd, check.args...)
         err = checkExec.Run()
         if err != nil {
             syscall.Kill(pid, syscall.SIGINT)
-        } else {
-            checkExec.Process.Release()
+        }
+    }
+}
+
+func (foreman *Foreman) sigChildHandler() {
+    for _, service := range foreman.services {
+        childProcess, _ := process.NewProcess(int32(service.process.Pid))
+        childStatus, _ := childProcess.Status()
+        if childStatus == "Z" {
+            service.process.Wait()
+            fmt.Printf("%d %s: process stopped\n", service.process.Pid, service.serviceName)
+            if !service.runOnce {
+                foreman.startService(service.serviceName)
+            }
         }
     }
 }
