@@ -27,6 +27,7 @@ type dependencyGraph map[string][]string
 
 type Foreman struct {
     services map[string]*Service
+    active bool
 }
 
 type Service struct {
@@ -49,6 +50,7 @@ type Checks struct {
 func New(procfilePath string) (*Foreman, error) {
     foreman := &Foreman{
     	services: make(map[string]*Service),
+    	active:   true,
     }
 
     procfileData, err := os.ReadFile(procfilePath)
@@ -92,10 +94,15 @@ func (foreman *Foreman) Start() error {
         }
     }
 
-    signal.Notify(sigs, syscall.SIGCHLD)
+    signal.Notify(sigs, syscall.SIGCHLD, syscall.SIGINT)
     for {
-        <-sigs
-        foreman.sigChildHandler()
+        sig := <- sigs
+        switch sig {
+        case syscall.SIGINT:
+            foreman.sigIntHandler()
+        case syscall.SIGCHLD:
+            foreman.sigChildHandler()
+        }
     }
 }
 
@@ -149,6 +156,14 @@ func (check *Checks) checker(pid int) {
     }
 }
 
+func (foreman *Foreman) sigIntHandler() {
+    foreman.active = false
+    for _, service := range foreman.services {
+        syscall.Kill(service.process.Pid, syscall.SIGINT)
+    }
+    os.Exit(0)
+}
+
 func (foreman *Foreman) sigChildHandler() {
     for _, service := range foreman.services {
         childProcess, _ := process.NewProcess(int32(service.process.Pid))
@@ -156,7 +171,7 @@ func (foreman *Foreman) sigChildHandler() {
         if childStatus == "Z" {
             service.process.Wait()
             fmt.Printf("%d %s: process stopped\n", service.process.Pid, service.serviceName)
-            if !service.runOnce {
+            if !service.runOnce && foreman.active {
                 foreman.startService(service.serviceName)
             }
         }
