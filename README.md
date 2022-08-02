@@ -26,9 +26,9 @@ redis:
 **Here** we defined two services `app` and `redis` with check commands and dependency matrix
 
 ## How to use
-**First:** modify the procfile with processes or services you want to run.
+**First:** add the procfile with processes or services you want to run.
 
-**second**: simply run with command: 
+**second**: run with command: 
 ```sh
 go run *.go
 ```
