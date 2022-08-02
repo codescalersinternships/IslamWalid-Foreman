@@ -89,11 +89,11 @@ func (foreman *Foreman) Start() error {
     for _, serviceName := range startList {
         service := foreman.services[serviceName]
         if service.runOnce {
-            service.startService(runOnceErr)
-            err = <-runOnceErr
+            service.runService(runOnceErr)
+            err = <- runOnceErr
         } else {
-            go service.startService(runAlwaysErr)
-            err = <-runAlwaysErr
+            go service.runService(runAlwaysErr)
+            err = <- runAlwaysErr
         }
 
         if err != nil {
@@ -117,7 +117,7 @@ func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
     return graph
 }
 
-func (service *Service) startService(errChan chan <- error) {
+func (service *Service) runService(errChan chan <- error) {
     serviceExec := exec.Command(service.cmd, service.args...)
 
     err := serviceExec.Start()
@@ -127,35 +127,37 @@ func (service *Service) startService(errChan chan <- error) {
     }
     errChan <- nil
 
+    syscall.Setpgid(serviceExec.Process.Pid, serviceExec.Process.Pid)
     fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
+    go service.checker(serviceExec.Process.Pid)
     serviceExec.Wait()
 
     for !service.runOnce {
         serviceExec = exec.Command(service.cmd, service.args...)
         serviceExec.Start()
+        go service.checker(serviceExec.Process.Pid)
         fmt.Printf("%d %s: process started\n", serviceExec.Process.Pid, service.serviceName)
         serviceExec.Wait()
     }
-        
 }
 
 func (service *Service) checker(pid int) {
+    ticker := time.NewTicker(checkInterval)
     for {
+        <-ticker.C
+
         err := syscall.Kill(pid, 0)
         if err != nil {
             return
         }
-
-        ticker := time.NewTicker(checkInterval)
-        <-ticker.C
-
+        
         checkExec := exec.Command(service.checks.cmd, service.checks.args...)
         err = checkExec.Run()
         if err != nil {
             syscall.Kill(pid, syscall.SIGINT)
-            return
+        } else {
+            checkExec.Process.Release()
         }
-        checkExec.Process.Release()
     }
 }
 
