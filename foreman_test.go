@@ -91,8 +91,7 @@ func TestTopSort(t *testing.T) {
     foreman, _ := New("./Procfile")
     depGraph := foreman.buildDependencyGraph()
     got := depGraph.topSort()
-    want := []string{"service_redis", "service_ping", "service_sleep"}
-    assertList(t, got, want)
+    assertTopSortResult(t, foreman, got)
 }
 
 func assertForeman(t *testing.T, got, want *Foreman) {
@@ -173,4 +172,18 @@ func assertGraph(t *testing.T, got, want map[string][]string) {
     for key, value := range got {
         assertList(t, value, want[key])
     }
+}
+
+func assertTopSortResult(t *testing.T, foreman *Foreman, got []string) {
+	t.Helper()
+
+	nodesSet := make(map[string]any)
+	for _, dep := range got {
+		for _, depDep := range foreman.services[dep].deps {
+			if _, ok := nodesSet[depDep]; !ok {
+				t.Fatalf("not expected to run %v before %v", dep, depDep)
+			}
+		}
+		nodesSet[dep] = 1
+	}
 }
