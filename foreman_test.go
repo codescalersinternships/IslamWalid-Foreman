@@ -17,8 +17,7 @@ func TestNew(t *testing.T) {
         sleeper := Service{
         	serviceName: "sleeper",
         	process:     nil,
-        	cmd:         "sleep",
-        	args:        []string{"infinity"},
+        	cmd:         "sleep infinity",
         	runOnce:     true,
         	deps:        []string{"hello"},
         	checks:      Checks{
@@ -32,8 +31,7 @@ func TestNew(t *testing.T) {
         hello := Service{
         	serviceName: "hello",
         	process:     nil,
-        	cmd:         "echo",
-        	args:        []string{`"hello"`},
+        	cmd:         `echo "hello"`,
         	runOnce:     true,
         	deps:        []string{},
         }
@@ -128,7 +126,6 @@ func assertService(t *testing.T, got, want *Service) {
         t.Errorf("got:\n%t\nwant:\n%t", got.runOnce, want.runOnce)
     }
 
-    assertList(t, got.args, want.args)
     assertList(t, got.deps, want.deps)
 }
 
@@ -139,7 +136,6 @@ func assertChecks(t *testing.T, got, want *Checks) {
         t.Errorf("got:\n%q\nwant:\n%q", got.cmd, want.cmd)
     }
 
-    assertList(t, got.args, want.args)
     assertList(t, got.tcpPorts, want.tcpPorts)
     assertList(t, got.udpPorts, want.udpPorts)
 }

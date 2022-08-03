@@ -1,5 +1,5 @@
 service_ping:
-  cmd: ping -c 5 google.com 
+  cmd: ping -c 5 google.com | grep google
   checks:
     cmd: ls
   deps: 

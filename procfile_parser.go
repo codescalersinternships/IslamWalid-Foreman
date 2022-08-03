@@ -1,15 +1,12 @@
 package main
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 func parseService(serviceMap map[string]any, out *Service) {
     for key, value := range serviceMap {
         switch key {
         case "cmd":
-            out.cmd, out.args = parseCmd(value.(string))
+            out.cmd = value.(string)
         case "run_once":
             out.runOnce = value.(bool)
         case "deps":
@@ -20,11 +17,6 @@ func parseService(serviceMap map[string]any, out *Service) {
             out.checks = checks
         }
     }
-}
-
-func parseCmd(cmd string) (string, []string) {
-    cmdList := strings.Split(cmd, " ")
-    return cmdList[0], cmdList[1:]
 }
 
 func parseDeps(deps any) []string {
@@ -44,7 +36,7 @@ func parseCheck(check any, out *Checks)  {
     for key, value := range checkMap {
         switch key {
         case "cmd":
-            out.cmd, out.args = parseCmd(value.(string))
+            out.cmd = value.(string)
         case "tcp_ports":
             out.tcpPorts = parsePorts(value)
         case "udp_ports":

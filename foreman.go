@@ -34,7 +34,6 @@ type Service struct {
     serviceName string
     process *os.Process
     cmd string
-    args []string
     runOnce bool
     deps []string
     checks Checks
@@ -42,7 +41,6 @@ type Service struct {
 
 type Checks struct {
     cmd string
-    args []string
     tcpPorts []string
     udpPorts []string
 }
@@ -119,7 +117,7 @@ func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
 func (foreman *Foreman) startService(serviceName string) error {
     service := foreman.services[serviceName]
 
-    serviceExec := exec.Command(service.cmd, service.args...)
+    serviceExec := exec.Command("bash", "-c", service.cmd)
 
     err := serviceExec.Start()
     if err != nil {
@@ -148,7 +146,7 @@ func (check *Checks) checker(pid int) {
             return
         }
         
-        checkExec := exec.Command(check.cmd, check.args...)
+        checkExec := exec.Command("bash", "-c", check.cmd)
         err = checkExec.Run()
         if err != nil {
             syscall.Kill(pid, syscall.SIGINT)
