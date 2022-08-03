@@ -1,0 +1,13 @@
+sleeper:
+    run_once: true
+    cmd: sleep infinity
+    checks:
+        cmd: ls
+        tcp_ports: [4759, 1865]
+        udp_ports: [4500, 3957]
+    deps:
+        - hello
+
+hello:
+    run_once: true
+    cmd: echo "hello"
