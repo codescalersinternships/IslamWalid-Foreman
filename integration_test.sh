@@ -65,9 +65,13 @@ Clean() {
     kill -SIGINT $foreman
 }
 
+go build -o foreman foreman.go main.go procfile_parser.go
+
 TestRestartAfterTermination
 TestTerminateRunOnceService
 TestTerminationOnBrockenDependency
+
+rm ./foreman
 
 echo "status ok: TEST PASSED"
 exit 0
