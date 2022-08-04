@@ -133,8 +133,6 @@ func (f *Foreman) startService(serviceName string) error {
     service.process = serviceExec.Process
     f.services[serviceName] = service
 
-    syscall.Setpgid(serviceExec.Process.Pid, serviceExec.Process.Pid)
-
     fmt.Printf("%d %s: process started\n", service.process.Pid, service.serviceName)
 
     go service.checks.checker(serviceExec.Process.Pid)
