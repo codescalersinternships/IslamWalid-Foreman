@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -74,9 +76,9 @@ func New(procfilePath string) (*Foreman, error) {
     return foreman, nil
 }
 
-func (foreman *Foreman) Start() error {
+func (f *Foreman) Start() error {
     sigs := make(chan os.Signal)
-    depGraph := foreman.buildDependencyGraph()
+    depGraph := f.buildDependencyGraph()
 
     if depGraph.isCyclic() {
         errMsg := "Cyclic dependency detected"
@@ -86,7 +88,7 @@ func (foreman *Foreman) Start() error {
     startList := depGraph.topSort()
 
     for _, serviceName := range startList {
-        err := foreman.startService(serviceName)
+        err := f.startService(serviceName)
         if err != nil {
             return err
         }
@@ -97,25 +99,25 @@ func (foreman *Foreman) Start() error {
         sig := <- sigs
         switch sig {
         case syscall.SIGINT:
-            foreman.sigIntHandler()
+            f.sigIntHandler()
         case syscall.SIGCHLD:
-            foreman.sigChildHandler()
+            f.sigChildHandler()
         }
     }
 }
 
-func (foreman *Foreman) buildDependencyGraph() dependencyGraph {
+func (f *Foreman) buildDependencyGraph() dependencyGraph {
     graph := dependencyGraph{}
 
-    for serviceName, service := range foreman.services {
+    for serviceName, service := range f.services {
         graph[serviceName] = service.deps
     }
 
     return graph
 }
 
-func (foreman *Foreman) startService(serviceName string) error {
-    service := foreman.services[serviceName]
+func (f *Foreman) startService(serviceName string) error {
+    service := f.services[serviceName]
 
     serviceExec := exec.Command("bash", "-c", service.cmd)
 
@@ -125,7 +127,7 @@ func (foreman *Foreman) startService(serviceName string) error {
     }
 
     service.process = serviceExec.Process
-    foreman.services[serviceName] = service
+    f.services[serviceName] = service
 
     syscall.Setpgid(serviceExec.Process.Pid, serviceExec.Process.Pid)
 
@@ -136,7 +138,7 @@ func (foreman *Foreman) startService(serviceName string) error {
     return nil
 }
 
-func (check *Checks) checker(pid int) {
+func (c *Checks) checker(pid int) {
     ticker := time.NewTicker(checkInterval)
     for {
         <-ticker.C
@@ -146,37 +148,76 @@ func (check *Checks) checker(pid int) {
             return
         }
         
-        checkExec := exec.Command("bash", "-c", check.cmd)
-        err = checkExec.Run()
+        err = c.checkCmd()
+        if err != nil {
+            syscall.Kill(pid, syscall.SIGINT)
+        }
+
+        err = c.checkPorts("tcp", pid)
+        if err != nil {
+            syscall.Kill(pid, syscall.SIGINT)
+        }
+
+        err = c.checkPorts("udp", pid)
         if err != nil {
             syscall.Kill(pid, syscall.SIGINT)
         }
     }
 }
 
-func (foreman *Foreman) sigIntHandler() {
-    foreman.active = false
-    for _, service := range foreman.services {
+func (c *Checks) checkCmd() error {
+    checkExec := exec.Command("bash", "-c", c.cmd)
+    err := checkExec.Run()
+    if err != nil {
+        return err
+    }
+    return nil
+}
+
+func (c *Checks) checkPorts(portType string, servicePid int) error {
+    var ports []string
+    switch portType {
+    case "tcp":
+        ports = c.tcpPorts
+    case "udp":
+        ports = c.udpPorts
+    }
+
+    for _, port := range ports {
+        cmd := fmt.Sprintf("netstat -lnptu | grep %s | grep %s -m 1 | awk '{print $7}'", portType, port)
+        out, _ := exec.Command("bash", "-c", cmd).Output()
+        pid, err := strconv.Atoi(strings.Split(string(out), "/")[0])
+        if err != nil || pid != servicePid {
+            return err
+        }
+    }
+
+    return nil
+}
+
+func (f *Foreman) sigIntHandler() {
+    f.active = false
+    for _, service := range f.services {
         syscall.Kill(service.process.Pid, syscall.SIGINT)
     }
     os.Exit(0)
 }
 
-func (foreman *Foreman) sigChildHandler() {
-    for _, service := range foreman.services {
+func (f *Foreman) sigChildHandler() {
+    for _, service := range f.services {
         childProcess, _ := process.NewProcess(int32(service.process.Pid))
         childStatus, _ := childProcess.Status()
         if childStatus == "Z" {
             service.process.Wait()
             fmt.Printf("%d %s: process stopped\n", service.process.Pid, service.serviceName)
-            if !service.runOnce && foreman.active {
-                foreman.startService(service.serviceName)
+            if !service.runOnce && f.active {
+                f.startService(service.serviceName)
             }
         }
     }
 }
 
-func (graph dependencyGraph) isCyclic() bool {
+func (g dependencyGraph) isCyclic() bool {
     cyclic := false
     state := make(map[string]vertixStatus)
 
@@ -192,20 +233,20 @@ func (graph dependencyGraph) isCyclic() bool {
         }
 
         state[vertix] = currentlyVisiting
-        for _, child := range graph[vertix] {
+        for _, child := range g[vertix] {
             dfs(child)
         }
         state[vertix] = visited
     }
 
-    for vertix := range graph {
+    for vertix := range g {
         dfs(vertix)
     }
 
     return cyclic
 }
 
-func (graph dependencyGraph) topSort() []string {
+func (g dependencyGraph) topSort() []string {
     out := make([]string, 0)
     state := make(map[string]vertixStatus)
 
@@ -216,13 +257,13 @@ func (graph dependencyGraph) topSort() []string {
         }
 
         state[vertix] = visited
-        for _, child := range graph[vertix] {
+        for _, child := range g[vertix] {
             dfs(child)
         }
         out = append(out, vertix)
     }
 
-    for vertix := range graph {
+    for vertix := range g {
         dfs(vertix)
     }
 
