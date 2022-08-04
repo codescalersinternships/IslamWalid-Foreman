@@ -107,17 +107,6 @@ func (f *Foreman) Start() error {
     }
 }
 
-// Build graph out of services dependencies.
-func (f *Foreman) buildDependencyGraph() dependencyGraph {
-    graph := dependencyGraph{}
-
-    for serviceName, service := range f.services {
-        graph[serviceName] = service.deps
-    }
-
-    return graph
-}
-
 func (f *Foreman) startService(serviceName string) error {
     service := f.services[serviceName]
 
@@ -127,6 +116,10 @@ func (f *Foreman) startService(serviceName string) error {
     }
 
     serviceExec := exec.Command("bash", "-c", service.cmd)
+    serviceExec.SysProcAttr = &syscall.SysProcAttr{
+    	Setpgid:                    true,
+    	Pgid:                       0,
+    }
 
     err = serviceExec.Start()
     if err != nil {
@@ -220,6 +213,10 @@ func (f *Foreman) sigChildHandler() {
 // Perform the command in the checks.
 func (s *Service) checkCmd() error {
     checkExec := exec.Command("bash", "-c", s.checks.cmd)
+    checkExec.SysProcAttr = &syscall.SysProcAttr{
+    	Setpgid:                    true,
+    	Pgid:                       0,
+    }
     err := checkExec.Run()
     if err != nil {
         return err
@@ -247,6 +244,17 @@ func (s *Service) checkPorts(portType string) error {
     }
 
     return nil
+}
+
+// Build graph out of services dependencies.
+func (f *Foreman) buildDependencyGraph() dependencyGraph {
+    graph := dependencyGraph{}
+
+    for serviceName, service := range f.services {
+        graph[serviceName] = service.deps
+    }
+
+    return graph
 }
 
 // Check if graph is cyclic.
