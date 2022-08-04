@@ -20,7 +20,7 @@ const (
     currentlyVisiting vertixStatus = 1
     visited vertixStatus = 2
 
-    checkInterval = 100 * time.Millisecond
+    checkInterval = 500 * time.Millisecond
 )
 
 type vertixStatus int
@@ -28,12 +28,13 @@ type vertixStatus int
 type dependencyGraph map[string][]string
 
 type Foreman struct {
-    services map[string]*Service
+    services map[string]Service
     active bool
 }
 
 type Service struct {
     serviceName string
+    active bool
     process *os.Process
     cmd string
     runOnce bool
@@ -51,7 +52,7 @@ type Checks struct {
 // it returns error if the file path is wrong or not in yml format.
 func New(procfilePath string) (*Foreman, error) {
     foreman := &Foreman{
-    	services: make(map[string]*Service),
+    	services: make(map[string]Service),
     	active:   true,
     }
 
@@ -67,11 +68,8 @@ func New(procfilePath string) (*Foreman, error) {
     }
 
     for key, value := range procfileMap {
-        service := &Service{
-        	serviceName: key,
-        }
-
-        parseService(value, service)
+        service := parseService(value)
+        service.serviceName = key
         foreman.services[key] = service
     }
 
@@ -123,77 +121,70 @@ func (f *Foreman) buildDependencyGraph() dependencyGraph {
 func (f *Foreman) startService(serviceName string) error {
     service := f.services[serviceName]
 
+    err := f.checkDeps(serviceName)
+    if err != nil {
+        return errors.New("Broken dependency")
+    }
+
     serviceExec := exec.Command("bash", "-c", service.cmd)
 
-    err := serviceExec.Start()
+    err = serviceExec.Start()
     if err != nil {
         return err
     }
 
+    service.active = true
     service.process = serviceExec.Process
     f.services[serviceName] = service
 
     fmt.Printf("%d %s: process started\n", service.process.Pid, service.serviceName)
 
-    go service.checks.checker(serviceExec.Process.Pid)
+    go f.checker(serviceName)
 
     return nil
 }
 
 // Perform the checks needed on a specific pid.
-func (c *Checks) checker(pid int) {
+func (f *Foreman) checker(serviceName string) {
+    service := f.services[serviceName]
     ticker := time.NewTicker(checkInterval)
     for {
         <-ticker.C
 
-        err := syscall.Kill(pid, 0)
+        err := syscall.Kill(service.process.Pid, 0)
         if err != nil {
             return
         }
-        
-        err = c.checkCmd()
+
+        err = f.checkDeps(serviceName)
         if err != nil {
-            syscall.Kill(pid, syscall.SIGINT)
+            syscall.Kill(service.process.Pid, syscall.SIGINT)
         }
 
-        err = c.checkPorts("tcp", pid)
+        err = service.checkCmd()
         if err != nil {
-            syscall.Kill(pid, syscall.SIGINT)
+            syscall.Kill(service.process.Pid, syscall.SIGINT)
         }
 
-        err = c.checkPorts("udp", pid)
+        err = service.checkPorts("tcp")
         if err != nil {
-            syscall.Kill(pid, syscall.SIGINT)
+            syscall.Kill(service.process.Pid, syscall.SIGINT)
+        }
+
+        err = service.checkPorts("udp")
+        if err != nil {
+            syscall.Kill(service.process.Pid, syscall.SIGINT)
         }
     }
 }
 
-// Perform the command in the checks.
-func (c *Checks) checkCmd() error {
-    checkExec := exec.Command("bash", "-c", c.cmd)
-    err := checkExec.Run()
-    if err != nil {
-        return err
-    }
-    return nil
-}
+func (f *Foreman) checkDeps(serviceName string) error {
+    service := f.services[serviceName]
 
-// Checks all ports in the checks.
-func (c *Checks) checkPorts(portType string, servicePid int) error {
-    var ports []string
-    switch portType {
-    case "tcp":
-        ports = c.tcpPorts
-    case "udp":
-        ports = c.udpPorts
-    }
-
-    for _, port := range ports {
-        cmd := fmt.Sprintf("netstat -lnptu | grep %s | grep %s -m 1 | awk '{print $7}'", portType, port)
-        out, _ := exec.Command("bash", "-c", cmd).Output()
-        pid, err := strconv.Atoi(strings.Split(string(out), "/")[0])
-        if err != nil || pid != servicePid {
-            return err
+    for _, depName := range service.deps {
+        depService := f.services[depName]
+        if !depService.active {
+            return errors.New("Broken dependency")
         }
     }
 
@@ -211,17 +202,51 @@ func (f *Foreman) sigIntHandler() {
 
 // Handles incoming SIGCHLD.
 func (f *Foreman) sigChildHandler() {
-    for _, service := range f.services {
+    for serviceName, service := range f.services {
         childProcess, _ := process.NewProcess(int32(service.process.Pid))
         childStatus, _ := childProcess.Status()
         if childStatus == "Z" {
+            service.active = false
             service.process.Wait()
             fmt.Printf("%d %s: process stopped\n", service.process.Pid, service.serviceName)
             if !service.runOnce && f.active {
                 f.startService(service.serviceName)
             }
+            f.services[serviceName] = service
         }
     }
+}
+
+// Perform the command in the checks.
+func (s *Service) checkCmd() error {
+    checkExec := exec.Command("bash", "-c", s.checks.cmd)
+    err := checkExec.Run()
+    if err != nil {
+        return err
+    }
+    return nil
+}
+
+// Checks all ports in the checks.
+func (s *Service) checkPorts(portType string) error {
+    var ports []string
+    switch portType {
+    case "tcp":
+        ports = s.checks.tcpPorts
+    case "udp":
+        ports = s.checks.udpPorts
+    }
+
+    for _, port := range ports {
+        cmd := fmt.Sprintf("netstat -lnptu | grep %s | grep %s -m 1 | awk '{print $7}'", portType, port)
+        out, _ := exec.Command("bash", "-c", cmd).Output()
+        pid, err := strconv.Atoi(strings.Split(string(out), "/")[0])
+        if err != nil || pid != s.process.Pid {
+            return err
+        }
+    }
+
+    return nil
 }
 
 // Check if graph is cyclic.

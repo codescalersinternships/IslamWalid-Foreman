@@ -11,7 +11,7 @@ const testCyclicProcfile = "./Procfile-cyclic-test"
 func TestNew(t *testing.T) {
     t.Run("Parse existing procfile with correct syntax", func(t *testing.T) {
         want := Foreman{
-        	services: map[string]*Service{},
+        	services: map[string]Service{},
         	active:   true,
         }
         sleeper := Service{
@@ -26,7 +26,7 @@ func TestNew(t *testing.T) {
         		udpPorts: []string{"4500", "3957"},
         	},
         }
-        want.services["sleeper"] = &sleeper
+        want.services["sleeper"] = sleeper
 
         hello := Service{
         	serviceName: "hello",
@@ -35,7 +35,7 @@ func TestNew(t *testing.T) {
         	runOnce:     true,
         	deps:        []string{},
         }
-        want.services["hello"] = &hello
+        want.services["hello"] = hello
 
         got, _ := New(testProcfile)
         
@@ -102,7 +102,7 @@ func assertForeman(t *testing.T, got, want *Foreman) {
     }
 }
 
-func assertService(t *testing.T, got, want *Service) {
+func assertService(t *testing.T, got, want Service) {
     t.Helper()
 
     if got.serviceName != want.serviceName {

@@ -2,21 +2,23 @@ package main
 
 import "fmt"
 
-func parseService(serviceMap map[string]any, out *Service) {
+func parseService(serviceMap map[string]any) Service {
+    service := Service{}
     for key, value := range serviceMap {
         switch key {
         case "cmd":
-            out.cmd = value.(string)
+            service.cmd = value.(string)
         case "run_once":
-            out.runOnce = value.(bool)
+            service.runOnce = value.(bool)
         case "deps":
-            out.deps = parseDeps(value)
+            service.deps = parseDeps(value)
         case "checks":
             checks := Checks{}
             parseCheck(value, &checks)
-            out.checks = checks
+            service.checks = checks
         }
     }
+    return service
 }
 
 func parseDeps(deps any) []string {

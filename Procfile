@@ -6,14 +6,14 @@ service_ping:
       - service_redis
 
 service_sleep:
-  cmd: sleep infinity
+  cmd: sleep 10
   checks:
     cmd: ls
   deps: 
       - service_ping
 
 service_redis:
-  cmd: redis-server --port 6010
+  cmd: redis-server --port 5010
   run_once: true
   checks:
-    cmd: redis-cli -p 6010 ping
+    cmd: redis-cli -p 5010 ping
