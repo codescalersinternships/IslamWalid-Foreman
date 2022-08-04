@@ -47,6 +47,8 @@ type Checks struct {
     udpPorts []string
 }
 
+// Parse and create a new foreman object.
+// it returns error if the file path is wrong or not in yml format.
 func New(procfilePath string) (*Foreman, error) {
     foreman := &Foreman{
     	services: make(map[string]*Service),
@@ -76,6 +78,7 @@ func New(procfilePath string) (*Foreman, error) {
     return foreman, nil
 }
 
+// Start all the services and resolve their dependencies.
 func (f *Foreman) Start() error {
     sigs := make(chan os.Signal)
     depGraph := f.buildDependencyGraph()
@@ -106,6 +109,7 @@ func (f *Foreman) Start() error {
     }
 }
 
+// Build graph out of services dependencies.
 func (f *Foreman) buildDependencyGraph() dependencyGraph {
     graph := dependencyGraph{}
 
@@ -138,6 +142,7 @@ func (f *Foreman) startService(serviceName string) error {
     return nil
 }
 
+// Perform the checks needed on a specific pid.
 func (c *Checks) checker(pid int) {
     ticker := time.NewTicker(checkInterval)
     for {
@@ -165,6 +170,7 @@ func (c *Checks) checker(pid int) {
     }
 }
 
+// Perform the command in the checks.
 func (c *Checks) checkCmd() error {
     checkExec := exec.Command("bash", "-c", c.cmd)
     err := checkExec.Run()
@@ -174,6 +180,7 @@ func (c *Checks) checkCmd() error {
     return nil
 }
 
+// Checks all ports in the checks.
 func (c *Checks) checkPorts(portType string, servicePid int) error {
     var ports []string
     switch portType {
@@ -195,6 +202,7 @@ func (c *Checks) checkPorts(portType string, servicePid int) error {
     return nil
 }
 
+// Handles incoming SIGINT.
 func (f *Foreman) sigIntHandler() {
     f.active = false
     for _, service := range f.services {
@@ -203,6 +211,7 @@ func (f *Foreman) sigIntHandler() {
     os.Exit(0)
 }
 
+// Handles incoming SIGCHLD.
 func (f *Foreman) sigChildHandler() {
     for _, service := range f.services {
         childProcess, _ := process.NewProcess(int32(service.process.Pid))
@@ -217,6 +226,7 @@ func (f *Foreman) sigChildHandler() {
     }
 }
 
+// Check if graph is cyclic.
 func (g dependencyGraph) isCyclic() bool {
     cyclic := false
     state := make(map[string]vertixStatus)
@@ -246,6 +256,7 @@ func (g dependencyGraph) isCyclic() bool {
     return cyclic
 }
 
+// Topologically sort the dependency graph.
 func (g dependencyGraph) topSort() []string {
     out := make([]string, 0)
     state := make(map[string]vertixStatus)
