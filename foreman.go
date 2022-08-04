@@ -207,12 +207,12 @@ func (f *Foreman) sigChildHandler() {
         childStatus, _ := childProcess.Status()
         if childStatus == "Z" {
             service.active = false
+            f.services[serviceName] = service
             service.process.Wait()
             fmt.Printf("%d %s: process stopped\n", service.process.Pid, service.serviceName)
             if !service.runOnce && f.active {
                 f.startService(service.serviceName)
             }
-            f.services[serviceName] = service
         }
     }
 }
