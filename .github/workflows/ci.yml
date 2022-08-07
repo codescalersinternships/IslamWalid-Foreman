@@ -3,6 +3,8 @@ name: foreman tests
 on:
   push:
     branches: [ development ]
+  push:
+    branches: [ main ]
 
 jobs:
 
