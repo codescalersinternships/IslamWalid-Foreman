@@ -12,6 +12,7 @@ TestRestartAfterTermination() {
     if [[ -z $restartPid ]]; then
         echo "TestRestartAfterTermination: TEST FAILED"
         Clean
+        rm ./foreman
         exit 1
     else
         echo "TestRestartAfterTermination: TEST PASSED"
@@ -34,6 +35,7 @@ TestTerminateRunOnceService() {
     else
         echo "TestTerminateRunOnceService: TEST FAILED"
         Clean
+        rm ./foreman
         exit 1
     fi
 
@@ -54,6 +56,7 @@ TestTerminationOnBrockenDependency() {
     else
         echo "TestTerminationOnBrockenDependency: TEST FAILED"
         Clean
+        rm ./foreman
         exit 1
     fi
 
